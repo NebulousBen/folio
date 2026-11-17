@@ -61,6 +61,35 @@ fn reopen(doc: &Document) -> Document {
     Document::open(Arc::new(write_incremental(doc, &SaveOptions::default()).unwrap())).unwrap()
 }
 
+#[test]
+fn applying_redactions_scrubs_folio_data_and_replies_away_from_the_redaction() {
+    let mut doc = one_page(
+        b"100 100 60 20 re f",
+        "",
+        vec![
+            b"<< /Type /Annot /Subtype /Text /NM (folio:1) /Rect [60 200 90 230] /Contents (Reading note) >>".to_vec(),
+            b"<< /Type /Annot /Subtype /Text /IRT 7 0 R /Rect [95 200 125 230] /Contents (Reply to reading note) >>".to_vec(),
+            b"<< /Type /Annot /Subtype /Text /NM (independent) /Rect [135 200 165 230] /Contents (Independent note) >>".to_vec(),
+        ],
+    );
+    let root = doc.root().unwrap();
+    doc.update_dict(root, |dict| {
+        dict.set(sanitize::FOLIO_READING_KEY, pdfcraft_cos::PdfString::text("Reading data with a quotation"));
+    })
+    .unwrap();
+    let page = pdfcraft_model::pages(&doc)[0].obj;
+    pdfcraft_annot::set_annots(&mut doc, page, (7..=9).map(|num| Object::Ref(ObjRef::new(num, 0))).collect()).unwrap();
+    mark(&mut doc, 0, &[[90.0, 95.0, 130.0, 125.0]], "");
+    apply(&mut doc, None).unwrap();
+    let saved = reopen(&doc);
+    assert!(!saved.get(saved.root().unwrap()).as_dict().unwrap().contains(sanitize::FOLIO_READING_KEY));
+    let comments = annots_of(&saved, &pdfcraft_model::pages(&saved)[0].dict);
+    assert_eq!(comments.len(), 1);
+    let remaining = saved.resolve(&comments[0]);
+    let name = remaining.as_dict().unwrap().get(b"NM").and_then(|value| value.as_string()).unwrap();
+    assert_eq!(name.to_text(), "independent");
+}
+
 /// A word drawn as outlines names itself in /ActualText. A mark over part of it removes the
 /// outlines (a shading painting them is clipped instead), and the name, which would still read the
 /// whole word, goes with them. A word the mark misses keeps its own.

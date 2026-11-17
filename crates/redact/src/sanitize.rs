@@ -110,20 +110,23 @@ pub(crate) fn drop_folio_reading(doc: &mut Document) -> Result<usize, RedactErro
             dict.remove(FOLIO_READING_KEY);
         })?;
     }
-    let mut removed_refs = std::collections::HashSet::new();
-    for page in pdfcraft_model::pages(doc) {
+    let folio = |doc: &Document, row: &Object| {
+        doc.resolve(row)
+            .as_dict()
+            .and_then(|dict| dict.get(b"NM"))
+            .is_some_and(|name| doc.resolve(name).as_string().is_some_and(|name| name.to_text().starts_with("folio:")))
+    };
+    let pages = pdfcraft_model::pages(doc);
+    let entries: Vec<_> = pages.iter().flat_map(|page| annots_of(doc, &page.dict)).collect();
+    let marked = entries.iter().filter(|entry| folio(doc, entry)).flat_map(|entry| {
+        let popup = doc.resolve(entry).as_dict().and_then(|dict| dict.reference(b"Popup"));
+        entry.as_ref().into_iter().chain(popup)
+    });
+    let removed_refs = pdfcraft_annot::with_replies_and_popups(doc, &entries, marked);
+    for page in pages {
         let mut rows = annots_of(doc, &page.dict);
         let count = rows.len();
-        rows.retain(|row| {
-            let obj = doc.resolve(row);
-            let folio = obj.as_dict().and_then(|dict| dict.get(b"NM")).is_some_and(|name| {
-                doc.resolve(name).as_string().is_some_and(|name| name.to_text().starts_with("folio:"))
-            });
-            if folio && let Some(reference) = row.as_ref() {
-                removed_refs.insert(reference);
-            }
-            !folio
-        });
+        rows.retain(|row| !folio(doc, row) && !pdfcraft_annot::goes_with(doc, row, &removed_refs));
         if rows.len() < count {
             removed += count - rows.len();
             pdfcraft_annot::set_annots(doc, page.obj, rows)?;
@@ -828,8 +831,9 @@ pub fn scan_only(doc: &Document, which: &[Hidden]) -> Vec<(Hidden, usize)> {
                         + count_sub(b"FileAttachment")
                         + owned(Hidden::Attachments)
                 }
-                Hidden::Comments => annots().iter().filter(|a| is_comment(a.name(b"Subtype").unwrap_or(b""))).count()
-                    + usize::from(cat.contains(FOLIO_READING_KEY)),
+                Hidden::Comments => {
+                    annots().iter().filter(|a| is_comment(a.name(b"Subtype").unwrap_or(b""))).count() + usize::from(cat.contains(FOLIO_READING_KEY))
+                }
                 Hidden::FormFields => {
                     let n = pdfcraft_forms::fields(doc).len();
                     if n > 0 {
