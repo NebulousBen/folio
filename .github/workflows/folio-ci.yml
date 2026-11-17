@@ -1,0 +1,70 @@
+name: Folio validation
+
+on:
+  pull_request:
+    branches: [folio]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      base:
+        type: string
+        required: true
+      upstream:
+        type: string
+        required: true
+      upstream_tag:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_DEV_INCREMENTAL: 'false'
+      PDFCRAFT_REQUIRE_WINRES: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.base || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Merge the release with Folio for validation
+        if: inputs.upstream != ''
+        env:
+          UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+          UPSTREAM_SHA: ${{ inputs.upstream }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ $UPSTREAM_TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ $UPSTREAM_SHA =~ ^[a-f0-9]{40}$ ]]
+          git fetch --no-tags https://github.com/storytold/pdfcraft.git "refs/tags/$UPSTREAM_TAG"
+          [[ $(git rev-parse 'FETCH_HEAD^{commit}') == "$UPSTREAM_SHA" ]]
+          if ! git -c user.name='Folio CI' -c user.email='actions@users.noreply.github.com' merge --no-commit --no-ff "$UPSTREAM_SHA"; then
+            {
+              echo '### Update could not be merged'
+              git diff --name-only --diff-filter=U
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+      - name: Validate and build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $version = (Select-String '^rust-version\s*=\s*"([0-9.]+)"$' Cargo.toml).Matches[0].Groups[1].Value
+          if (($version -split '\.').Length -eq 2) { $version += '.0' }
+          rustup toolchain install $version --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
+          cargo "+$version" fmt --all --check
+          cargo "+$version" clippy --locked --workspace --all-targets -- -D warnings
+          cargo "+$version" test --locked --workspace
+          cargo "+$version" xtask layers
+          cargo "+$version" xtask assets
+          cargo "+$version" check --locked -p pdfcraft-web --target wasm32-unknown-unknown
+          cargo "+$version" build --locked -p pdfcraft -p pdfcraft-cli

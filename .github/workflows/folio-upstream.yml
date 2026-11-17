@@ -1,0 +1,83 @@
+name: Check upstream PDFCraft
+
+on:
+  schedule:
+    - cron: '27 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: folio-upstream-update
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.event.repository.fork && github.ref_name == 'folio'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      tag: ${{ steps.prepare.outputs.tag }}
+      upstream: ${{ steps.prepare.outputs.upstream }}
+      base: ${{ steps.prepare.outputs.base }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Create a review pull request for the release
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=$(gh api repos/storytold/pdfcraft/releases/latest --jq .tag_name)
+          if [[ ! $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "The latest release does not have a stable version tag." >&2
+            exit 1
+          fi
+          git fetch --no-tags https://github.com/storytold/pdfcraft.git "refs/tags/$tag"
+          upstream=$(git rev-parse 'FETCH_HEAD^{commit}')
+          base=$(git rev-parse HEAD)
+          if git merge-base --is-ancestor "$upstream" "$base"; then
+            echo "PDFCraft $tag is already incorporated."
+            exit 0
+          fi
+          branch="upstream/$tag"
+          existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --base folio --head "$branch" --state open --json url --jq '.[0].url // empty')
+          if [[ -n $existing ]]; then
+            echo "An update is already open: $existing"
+            exit 0
+          fi
+          # Push the release commit as the PR head. This leaves a reviewable PR even
+          # when the candidate merge has conflicts. Never replace an existing branch.
+          previous=$(git ls-remote --heads origin "refs/heads/$branch")
+          if [[ -z $previous ]]; then
+            git push origin "$upstream:refs/heads/$branch"
+          elif [[ ${previous%%$'\t'*} != "$upstream" ]]; then
+            echo "The update branch already has changes. Review it before opening another PR." >&2
+            exit 1
+          fi
+          {
+            printf 'Merge the official PDFCraft release [%s](https://github.com/storytold/pdfcraft/releases/tag/%s) into Folio.\n\n' "$tag" "$tag"
+            printf 'Upstream commit: `%s`\n\n' "$upstream"
+            printf '[Candidate merge and Windows checks](%s/%s/actions/runs/%s). If the merge conflicts, merge the current Folio branch into this PR branch and resolve the conflicts before review.\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+          } > "$RUNNER_TEMP/folio-upstream-pr.md"
+          gh pr create --repo "$GITHUB_REPOSITORY" --base folio --head "$branch" \
+            --title "Update PDFCraft to $tag" --body-file "$RUNNER_TEMP/folio-upstream-pr.md"
+          {
+            printf 'tag=%s\n' "$tag"
+            printf 'upstream=%s\n' "$upstream"
+            printf 'base=%s\n' "$base"
+          } >> "$GITHUB_OUTPUT"
+
+  validate:
+    needs: prepare
+    if: needs.prepare.outputs.upstream != ''
+    uses: ./.github/workflows/folio-ci.yml
+    with:
+      base: ${{ needs.prepare.outputs.base }}
+      upstream: ${{ needs.prepare.outputs.upstream }}
+      upstream_tag: ${{ needs.prepare.outputs.tag }}
