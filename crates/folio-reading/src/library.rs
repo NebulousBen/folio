@@ -9,8 +9,11 @@ use serde::Deserialize;
 
 use crate::{Backup, BackupDocument, DocumentKey, MAX_BACKUP_SIZE, MAX_READING_SIZE, Reading, ReadingError};
 
+pub mod backups;
 pub mod handoff;
 mod history;
+pub mod legacy_ai;
+pub mod session;
 pub mod workspaces;
 pub use history::{Checkpoint, checkpoints};
 
@@ -156,7 +159,7 @@ fn load_record(root: &Path, key: &DocumentKey) -> Result<Option<BackupDocument>,
 /// Replace an autosave only if it still matches the snapshot the editor loaded.
 /// The lock is shared between writers for this document, including import.
 pub fn save(root: &Path, record: &BackupDocument, expected: Option<&Reading>) -> Result<(), ReadingError> {
-    let page_count = record.page_count.ok_or(ReadingError::Invalid("missing page count"))?;
+    let page_count = record.page_count.unwrap_or(u32::MAX);
     let dir = root.join("documents");
     fs::create_dir_all(&dir)?;
     let _lock = lock_document(&dir, &record.key)?;

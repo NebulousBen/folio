@@ -6,13 +6,13 @@ Folio builds on PDFCraft v0.21.1. The `folio` branch is the base for Folio chang
 
 Install Rust 1.95.0 with rustfmt and Clippy, plus Microsoft C++ Build Tools and the Windows SDK. From the fork, build with `cargo +1.95.0 build --locked -p pdfcraft -p pdfcraft-cli`. The Cargo executable is `target/debug/pdfcraft.exe`. Set `FOLIO_NATIVE_DATA_DIR` to a disposable absolute directory when testing the app. The release repository is a compile-time `FOLIO_RELEASE_REPO` value containing the fork's GitHub owner and repository.
 
-The development port can preview and import legacy reading data into a separate profile. Windows smoke tests verified bookmark autosave, checkpoint restore, virtual workspace persistence, the offline Canadian-English checker, and creation of a one-page AI handoff with a verified page map and checksum. The source PDF's SHA-256 stayed the same. The CLI exposes `folio_reading_info` and `folio_extract_bookmarks` for PDFs with embedded Folio data.
+Folio stores native reading data in `%APPDATA%\folio-reader\native` on Windows. Run `pdfcraft-cli folio-migrate "%APPDATA%\folio-reader"` from Command Prompt for a read-only preview, and add `--apply` to copy readings and workspace references. Repeat imports preserve newer native notes. The Home screen offers saved-tab restoration, previous AI readings, and JSON backup and restore. Open a source PDF and use **Reading notes → Restore Folio form answers** to apply compatible saved answers as an undoable edit. Save to commit those answers to the PDF. The CLI also exposes `folio_reading_info` and `folio_extract_bookmarks` for PDFs with embedded Folio data.
 
 The branch also contains reading mark and category editors, filtered note exports, annotated PDF copies, and folder workspaces. The two-pass AI reading resumed after an app restart in a test with a local Codex stub. The bundled Codex runtime started a thread under the restricted Folio permission profile. Live model analysis still needs an end-to-end test. Set `FOLIO_CODEX_BINARY` to the runtime's absolute executable path when running a development build.
 
 The native Rotate Pages and Save commands preserved reading marks and bookmarks in the new revision. Folio carries anchors through incremental saves when it can verify the page content and bounds. Reading data for changed pages and full rewrites stays attached to the prior revision.
 
-Production cutover still requires a complete migration and release test. The existing Folio release remains the production reader.
+Markdown source files remain in the original library. Folio continues to write Markdown note exports and AI handoff instructions.
 
 ## Upstream releases
 

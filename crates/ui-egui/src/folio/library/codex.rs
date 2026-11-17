@@ -3,17 +3,89 @@ use std::collections::VecDeque;
 use std::io::{BufRead as _, BufReader, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use super::ReadingError;
+use super::{PdfCraftApp, ReadingError};
 
 const VERSION: &str = "codex-cli 0.162.0-alpha.17.2";
 const PROFILE: &str = "folio-reading";
 const MAX_MESSAGE: usize = 32 * 1024 * 1024;
+
+pub(super) struct Login {
+    events: Receiver<Result<LoginEvent, String>>,
+    cancelled: Arc<AtomicBool>,
+}
+
+enum LoginEvent {
+    Browser(String),
+    Complete,
+}
+
+impl Drop for Login {
+    fn drop(&mut self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+    }
+}
+
+pub(super) fn sign_in(app: &mut PdfCraftApp, ctx: &egui::Context, executable: PathBuf, home: PathBuf) {
+    if app.folio.codex_login.is_some() {
+        return;
+    }
+    let (sender, events) = mpsc::channel();
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let token = Arc::clone(&cancelled);
+    let ctx = ctx.clone();
+    let worker = std::thread::Builder::new().name("folio-codex-sign-in".into()).spawn(move || {
+        let sign_in = || {
+            let mut client = Client::start(&executable, &home, &token)?;
+            let response = client.request("account/login/start", json!({"type":"chatgpt"}), &token)?;
+            let url = response["authUrl"]
+                .as_str()
+                .filter(|url| url.starts_with("https://auth.openai.com/"))
+                .ok_or_else(|| error("Codex returned an unexpected sign-in page"))?;
+            let id = response["loginId"].as_str().ok_or_else(|| error("Codex did not start browser sign-in"))?;
+            sender.send(Ok(LoginEvent::Browser(url.to_owned()))).map_err(|err| error(err.to_string()))?;
+            ctx.request_repaint();
+            let end = Instant::now() + Duration::from_secs(600);
+            loop {
+                let event = client.receive(end, &token)?;
+                if event["method"].as_str() == Some("account/login/completed") && event["params"]["loginId"].as_str() == Some(id) {
+                    return if event["params"]["success"].as_bool() == Some(true) {
+                        Ok(LoginEvent::Complete)
+                    } else {
+                        Err(error("Codex sign-in did not complete"))
+                    };
+                }
+            }
+        };
+        let _ = sender.send(sign_in().map_err(|error| error.to_string()));
+        ctx.request_repaint();
+    });
+    match worker {
+        Ok(_) => app.folio.codex_login = Some(Login { events, cancelled }),
+        Err(error) => app.notify_error(error),
+    }
+}
+
+pub(super) fn poll_login(app: &mut PdfCraftApp) {
+    let Some(login) = app.folio.codex_login.take() else { return };
+    match login.events.try_recv() {
+        Ok(Ok(LoginEvent::Browser(url))) => {
+            app.open_url(&url);
+            app.notify_tr("Complete Codex sign-in in your browser");
+            app.folio.codex_login = Some(login);
+        }
+        Ok(Ok(LoginEvent::Complete)) => app.notify_tr("Signed in to Codex"),
+        Ok(Err(error)) if !login.cancelled.load(Ordering::Relaxed) => app.notify_error(error),
+        Err(mpsc::TryRecvError::Empty) => app.folio.codex_login = Some(login),
+        _ => {}
+    }
+}
 
 pub(super) fn binary() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("FOLIO_CODEX_BINARY").map(PathBuf::from).filter(|path| path.is_absolute() && path.is_file()) {
@@ -41,11 +113,11 @@ pub(super) struct Client {
 
 impl Client {
     pub(super) fn start(binary: &Path, home: &Path, cancelled: &AtomicBool) -> Result<Self, ReadingError> {
-        let check = command(binary).arg("--version").stdin(Stdio::null()).output()?;
+        std::fs::create_dir_all(home)?;
+        let check = command(binary).arg("--version").env("CODEX_HOME", home).stdin(Stdio::null()).output()?;
         if !check.status.success() || String::from_utf8_lossy(&check.stdout).trim() != VERSION {
             return Err(error(format!("Use the Folio Codex runtime {VERSION}")));
         }
-        std::fs::create_dir_all(home)?;
         let mut child = command(binary)
             .args(["app-server", "--listen", "stdio://"])
             .env("CODEX_HOME", home)

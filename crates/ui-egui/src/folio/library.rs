@@ -7,15 +7,22 @@ use pdfcraft_engine::folio::{Annotation, AnnotationKind, BackupDocument, Documen
 
 use crate::{PdfCraftApp, pickers::Ask};
 
+mod backup_ui;
 mod codex;
 mod edit;
 mod handoff;
+mod legacy_runs;
 mod proofread;
+mod tabs;
 mod workspaces;
 
 #[derive(Default)]
 pub(crate) struct ReadingUi {
     pub(super) directory: Option<PathBuf>,
+    backups: backup_ui::BackupUi,
+    tabs: tabs::LegacyTabsUi,
+    legacy_runs: legacy_runs::LegacyRunsUi,
+    codex_login: Option<codex::Login>,
     importing: Option<Job<library::ImportPreview>>,
     preview: Option<library::ImportPreview>,
     applying: Option<Job<library::ImportReport>>,
@@ -76,12 +83,6 @@ impl PdfCraftApp {
     pub(crate) fn folio_preview_profile(&mut self, ctx: &egui::Context) {
         let Some(path) = self.folio.directory.as_deref().and_then(Path::parent) else { return };
         self.start_folio_import(path.to_path_buf(), ctx);
-    }
-
-    pub(crate) fn folio_pick_backup(&mut self, ctx: &egui::Context) {
-        let ctx = ctx.clone();
-        let dialog = rfd::AsyncFileDialog::new().set_title("Open a Folio backup").add_filter("Folio backup", &["json"]);
-        self.ask_one(Ask::File(dialog), None, move |app, path| app.start_folio_import(path, &ctx));
     }
 
     fn start_folio_import(&mut self, path: PathBuf, ctx: &egui::Context) {
@@ -166,6 +167,10 @@ fn commit_reading(app: &mut PdfCraftApp, notes: &mut Notes, state: Reading) -> R
 }
 
 pub(crate) fn show(app: &mut PdfCraftApp, ctx: &egui::Context) {
+    backup_ui::show(app, ctx);
+    tabs::show(app, ctx);
+    legacy_runs::show(app, ctx);
+    codex::poll_login(app);
     workspaces::show(app, ctx);
     if let Some(result) = finished(&mut app.folio.opening_source) {
         match result {
@@ -247,6 +252,7 @@ fn show_notes(app: &mut PdfCraftApp, ctx: &egui::Context, mut notes: Notes) {
     let mut pdf_report = false;
     let mut extract = false;
     let mut annotated = false;
+    let mut restore_answers = false;
     let target = app.active_ids().filter(|&(_, id)| id == notes.document);
     let page = target.and_then(|(index, _)| app.views.get(index)).map(|view| view.current as u32 + 1);
     let page_count = app.session.get(notes.document).map_or(1, |doc| doc.info.pages.len()) as u32;
@@ -259,12 +265,18 @@ fn show_notes(app: &mut PdfCraftApp, ctx: &egui::Context, mut notes: Notes) {
                 export = ui.button("Save notes as Markdown…").clicked();
                 pdf_report = ui.button("Save notes as PDF…").clicked();
                 annotated = ui.button("Save annotated copy…").clicked();
+                if ui.button("Back up this reading…").clicked() {
+                    backup_ui::export_reading(app, ui.ctx(), &notes);
+                }
             });
             if let Some(page) = page {
                 edit::tools(app, ui, &mut notes, page, page_count);
                 source_links(app, ui, &notes, page);
                 handoff::show(app, ui, &mut notes, page, page_count);
                 show_history(app, ui, &mut notes, page_count);
+                if !notes.reading.form_values.is_empty() {
+                    restore_answers = ui.button("Restore Folio form answers").clicked();
+                }
             }
             jump = notes_ui(ui, &mut notes);
             if !notes.reading.bookmarks.is_empty() {
@@ -289,6 +301,9 @@ fn show_notes(app: &mut PdfCraftApp, ctx: &egui::Context, mut notes: Notes) {
             Err(error) => app.notify_error(error),
         });
     }
+    if restore_answers {
+        apply_form_answers(app, &notes);
+    }
     if let Some(page) = jump
         && let Some(index) = app.views.iter().position(|view| view.id == notes.document)
     {
@@ -299,6 +314,22 @@ fn show_notes(app: &mut PdfCraftApp, ctx: &egui::Context, mut notes: Notes) {
     }
     if open && app.session.get(notes.document).is_some() {
         app.folio.notes = Some(notes);
+    }
+}
+
+fn apply_form_answers(app: &mut PdfCraftApp, notes: &Notes) {
+    if !app.active_ids().is_some_and(|(_, id)| id == notes.document) {
+        return;
+    }
+    let Some(doc) = app.session.get(notes.document) else { return };
+    let restore = doc.folio_form_restore(&notes.reading);
+    if restore.edits.is_empty() {
+        app.notify_tr("No compatible form answers were found in this PDF");
+        return;
+    }
+    let edit = pdfcraft_engine::Edit::Batch { label: "Restore Folio form answers".into(), edits: restore.edits };
+    if app.apply_edit(edit) {
+        app.notify(format!("Restored Folio form answers. {} entries skipped. Save the PDF to keep the restored answers.", restore.skipped));
     }
 }
 

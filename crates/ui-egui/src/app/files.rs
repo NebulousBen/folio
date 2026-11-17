@@ -817,6 +817,13 @@ impl PdfCraftApp {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn folio_tab_pending(&self, path: &str) -> bool {
+        self.pending_opens.iter().any(|open| open.path.as_deref().is_some_and(|target| same_file(path, target)))
+            || self.deferred_opens.iter().any(|open| same_file(path, &open.path))
+            || self.password_prompt.as_ref().and_then(|prompt| prompt.path.as_deref()).is_some_and(|target| same_file(path, target))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn open_folio_source(&mut self, path: &str, page: u32) {
         let target = pdfcraft_render::RemoteDestination::Page { page: page.saturating_sub(1) as usize, view: pdfcraft_render::DestView::Top };
         self.open_file_request(path, Some(target), None, None);

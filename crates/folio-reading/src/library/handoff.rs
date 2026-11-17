@@ -55,7 +55,7 @@ pub struct Handoff {
 }
 
 impl Handoff {
-    fn validate(&self) -> Result<(), ReadingError> {
+    pub(super) fn validate(&self) -> Result<(), ReadingError> {
         if self.version != 1
             || self.name.trim().is_empty()
             || self.name.chars().count() > 200

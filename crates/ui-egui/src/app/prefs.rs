@@ -99,6 +99,7 @@ impl PdfCraftApp {
             "last_views": self.last_views_to_save(),
             // Kept only while the preference is on.
             "last_session": self.reopen_last_session.then(|| self.session_to_save()),
+            "closed_tabs": self.closed_tabs,
             "reload_changed_files": self.reload_changed_files,
             "system_title_bar": self.system_title_bar,
             "pinned_folders": self.pinned.folders,
@@ -261,6 +262,9 @@ impl PdfCraftApp {
         }
         self.restore_last_views(&v["last_views"]);
         self.last_session = last_session::LastSession::from_json(&v["last_session"]);
+        if let Some(tabs) = v["closed_tabs"].as_array() {
+            self.closed_tabs = tabs.iter().filter_map(|path| path.as_str().filter(|path| !path.is_empty()).map(str::to_owned)).take(10).collect();
+        }
         if let Some(on) = v["system_title_bar"].as_bool() {
             self.system_title_bar = on;
         }

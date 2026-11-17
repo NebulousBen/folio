@@ -13,13 +13,19 @@ use crate::{DocId, Document, EditError, Session};
 use pdfcraft_annot::{Markup, Meta, NewAnnotation, NoteIcon, Shape, Style};
 use pdfcraft_cos::{Document as PdfDocument, PdfString};
 
+mod forms;
+pub use forms::FormRestore;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub mod handoff;
 #[cfg(not(target_arch = "wasm32"))]
 mod revision;
 
 const CATALOG_KEY: &str = "FolioReadingData";
-pub const VERSION: &str = "0.5.0-dev";
+pub const VERSION: &str = match option_env!("FOLIO_BUILD_VERSION") {
+    Some(version) => version,
+    None => "0.5.0-dev",
+};
 
 impl Document {
     /// Read Folio's portable notes using the same unlocked object graph as the rest of the engine.

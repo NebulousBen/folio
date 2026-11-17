@@ -6,9 +6,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use pdfcraft_engine::folio::handoff::{connected, import_result};
 use pdfcraft_engine::folio::library::handoff::{self, Density, EXCERPT, Handoff, INSTRUCTIONS, RESULT};
+use pdfcraft_engine::folio::library::legacy_ai::{self, LegacyRun};
 use pdfcraft_engine::folio::{DocumentKey, Reading, ReadingError};
 
-use super::{Ask, Job, Notes, PdfCraftApp, codex, commit_reading, finished, run};
+use super::{Ask, Job, Notes, PdfCraftApp, codex, commit_reading, finished, legacy_runs, run};
 
 #[derive(Default)]
 pub(super) struct HandoffUi {
@@ -18,6 +19,8 @@ pub(super) struct HandoffUi {
     instructions: String,
     density: Density,
     jobs: Option<Vec<(PathBuf, Handoff)>>,
+    legacy: Option<Vec<LegacyRun>>,
+    loading_legacy: Option<Job<Vec<LegacyRun>>>,
     preparing: Option<Job<PathBuf>>,
     importing: Option<Job<(Reading, Reading)>>,
     pause: Option<Arc<AtomicBool>>,
@@ -39,6 +42,15 @@ pub(super) fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui, notes: &mut Notes, 
                 app.notify(format!("AI handoff saved in {}", path.display()));
             }
             Err(error) => app.notify_error(error),
+        }
+    }
+    if let Some(result) = finished(&mut notes.handoff.loading_legacy) {
+        match result {
+            Ok(rows) => notes.handoff.legacy = Some(rows),
+            Err(error) => {
+                notes.handoff.legacy = Some(Vec::new());
+                app.notify_error(error);
+            }
         }
     }
     if let Some(result) = finished(&mut notes.handoff.importing) {
@@ -87,7 +99,31 @@ pub(super) fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui, notes: &mut Notes, 
         }
         let Some(dir) = app.folio.directory.as_deref() else { return };
         let home = codex_home(dir);
+        let legacy_profile = dir.parent().map(Path::to_owned);
+        if let Some(binary) = codex::binary() {
+            if app.folio.codex_login.is_some() {
+                if ui.button("Cancel Codex sign-in").clicked() {
+                    app.folio.codex_login = None;
+                }
+            } else if ui.button("Sign in to Codex…").clicked() {
+                codex::sign_in(app, ui.ctx(), binary, home.clone());
+            }
+        }
+        if notes.handoff.legacy.is_none()
+            && notes.handoff.loading_legacy.is_none()
+            && let Some(old) = legacy_profile
+        {
+            let key = notes.key.clone();
+            match run("folio-existing-handoffs", ui.ctx(), move || legacy_ai::list(&old, Some(&key))) {
+                Ok(job) => notes.handoff.loading_legacy = Some(job),
+                Err(error) => {
+                    notes.handoff.legacy = Some(Vec::new());
+                    app.notify_error(error);
+                }
+            }
+        }
         if notes.handoff.jobs.is_none() {
+            let Some(dir) = app.folio.directory.as_deref() else { return };
             match handoff::for_source(dir, &notes.key) {
                 Ok(jobs) => notes.handoff.jobs = Some(jobs),
                 Err(error) => {
@@ -134,6 +170,23 @@ pub(super) fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui, notes: &mut Notes, 
                                     app.notify_error(error);
                                 }
                             });
+                        }
+                    });
+                });
+            }
+        }
+        if let Some(readings) = &notes.handoff.legacy {
+            for (index, reading) in readings.iter().enumerate().filter(|(_, reading)| !reading.archived) {
+                ui.push_id(("legacy_handoff", index), |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.strong(&reading.name);
+                        legacy_runs::show_links(app, ui, reading);
+                        if notes.handoff.importing.is_none()
+                            && let (Some(folder), Some(handoff), Some(result)) = (&reading.handoff_folder, &reading.handoff, &reading.result)
+                            && result.is_file()
+                            && ui.button("Import previous AI layer").clicked()
+                        {
+                            import = Some((folder.clone(), handoff.clone(), result.clone()));
                         }
                     });
                 });

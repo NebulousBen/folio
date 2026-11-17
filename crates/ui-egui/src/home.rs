@@ -88,11 +88,20 @@ pub fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                 if ui.button("Reading workspaces").clicked() {
                     app.folio_open_workspaces();
                 }
+                if ui.button("Previous AI readings…").clicked() {
+                    app.folio_previous_ai_readings(ui.ctx());
+                }
                 if ui.button("Preview existing Folio library").clicked() {
                     app.folio_preview_profile(ui.ctx());
                 }
+                if ui.button("Restore previous Folio tabs…").clicked() {
+                    app.folio_preview_tabs(ui.ctx());
+                }
                 if ui.button("Import Folio backup…").clicked() {
                     app.folio_pick_backup(ui.ctx());
+                }
+                if ui.button("Back up Folio library…").clicked() {
+                    app.folio_export_backup(ui.ctx());
                 }
             });
             if !app.community_card_closed {
