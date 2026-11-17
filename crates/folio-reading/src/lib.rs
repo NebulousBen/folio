@@ -387,6 +387,47 @@ impl Reading {
         reading
     }
 
+    /// Retain anchors only on pages whose content and bounds are known to survive a revision.
+    /// An explicit range is retained only when its pages remain together in the same order.
+    pub fn rebased(&self, unchanged: &BTreeMap<u32, u32>) -> Self {
+        let mut reading = self.clone();
+        reading.annotations.retain_mut(|mark| {
+            let Some(&page) = unchanged.get(&mark.page) else { return false };
+            mark.page = page;
+            true
+        });
+        reading.bookmarks.retain_mut(|bookmark| {
+            let start = bookmark.page;
+            let Some(&page) = unchanged.get(&start) else { return false };
+            if let Some(end) = bookmark.end_page {
+                let expected = end.saturating_sub(start).saturating_add(1);
+                let mapped = unchanged.range(start..=end);
+                let continuous = mapped.clone().count() == expected as usize && mapped.zip(page..).all(|((_, &page), next)| page == next);
+                bookmark.end_page = continuous.then(|| page.saturating_add(expected - 1));
+                if !continuous {
+                    return false;
+                }
+            }
+            bookmark.page = page;
+            true
+        });
+        reading.selection_sources.retain_mut(|source| {
+            source.pages.retain_mut(|mapping| {
+                let Some(&page) = unchanged.get(&mapping.page) else { return false };
+                mapping.page = page;
+                true
+            });
+            !source.pages.is_empty()
+        });
+        if let Some(&page) = unchanged.get(&self.page) {
+            reading.page = page;
+        } else {
+            reading.page = 1;
+            reading.position = None;
+        }
+        reading
+    }
+
     pub fn validate(&self, page_count: Option<u32>) -> Result<(), ReadingError> {
         let limit = page_count.unwrap_or(u32::MAX);
         if self.version != 1 || !valid_page(self.page, limit) || !matches!(self.rotation, 0 | 90 | 180 | 270) {
@@ -633,5 +674,25 @@ mod tests {
         assert_eq!(excerpt.bookmarks[0].end_page, Some(2));
         assert_eq!(excerpt.selection_sources[0].pages, [PageMapping { page: 1, source_page: 21 }]);
         assert_eq!(excerpt.selection_sources[1].pages, [PageMapping { page: 2, source_page: 3 }]);
+    }
+
+    #[test]
+    fn revision_only_transfers_marks_on_retained_pages_and_contiguous_bookmarks() {
+        let reading = read(&legacy_reading()).unwrap();
+        let moved = reading.rebased(&BTreeMap::from([(2, 1), (3, 2)]));
+        moved.validate(Some(3)).unwrap();
+        assert_eq!(moved.annotations[0].page, 1);
+        assert_eq!((moved.bookmarks[0].page, moved.bookmarks[0].end_page), (1, Some(2)));
+        assert_eq!(moved.selection_sources[0].pages, [PageMapping { page: 1, source_page: 21 }]);
+
+        let edited = reading.rebased(&BTreeMap::from([(1, 1), (3, 3)]));
+        assert!(edited.annotations.is_empty());
+        assert!(edited.bookmarks.is_empty());
+        assert!(edited.selection_sources.is_empty());
+        assert!(edited.position.is_none());
+
+        let reordered = reading.rebased(&BTreeMap::from([(2, 3), (3, 1)]));
+        assert_eq!(reordered.annotations[0].page, 3);
+        assert!(reordered.bookmarks.is_empty());
     }
 }

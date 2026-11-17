@@ -8,9 +8,11 @@ Install Rust 1.95.0 with rustfmt and Clippy, plus Microsoft C++ Build Tools and 
 
 The development port can preview and import legacy reading data into a separate profile. Windows smoke tests verified bookmark autosave, checkpoint restore, virtual workspace persistence, the offline Canadian-English checker, and creation of a one-page AI handoff with a verified page map and checksum. The source PDF's SHA-256 stayed the same. The CLI exposes `folio_reading_info` and `folio_extract_bookmarks` for PDFs with embedded Folio data.
 
-The branch also contains reading mark and category editors, filtered note exports, annotated PDF copies, and folder workspaces. A smoke test using a local Codex stub verified the connected bracket and highlight passes and their saved checkpoints. The connected AI flow uses the Codex runtime from the existing Folio release. Set `FOLIO_CODEX_BINARY` to its absolute executable path when running a development build. Analysis with the actual runtime still needs an end-to-end test.
+The branch also contains reading mark and category editors, filtered note exports, annotated PDF copies, and folder workspaces. The two-pass AI reading resumed after an app restart in a test with a local Codex stub. The bundled Codex runtime started a thread under the restricted Folio permission profile. Live model analysis still needs an end-to-end test. Set `FOLIO_CODEX_BINARY` to the runtime's absolute executable path when running a development build.
 
-Production cutover still requires verification of existing data migration, reading continuity after native PDF edits, and AI job recovery. The existing Folio release remains the production reader.
+The native Rotate Pages and Save commands preserved reading marks and bookmarks in the new revision. Folio carries anchors through incremental saves when it can verify the page content and bounds. Reading data for changed pages and full rewrites stays attached to the prior revision.
+
+Production cutover still requires a complete migration and release test. The existing Folio release remains the production reader.
 
 ## Upstream releases
 

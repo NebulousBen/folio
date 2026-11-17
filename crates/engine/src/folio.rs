@@ -15,6 +15,8 @@ use pdfcraft_cos::{Document as PdfDocument, PdfString};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod handoff;
+#[cfg(not(target_arch = "wasm32"))]
+mod revision;
 
 const CATALOG_KEY: &str = "FolioReadingData";
 pub const VERSION: &str = "0.5.0-dev";

@@ -44,6 +44,31 @@ struct Notes {
 }
 
 impl PdfCraftApp {
+    pub(crate) fn carry_folio_save(&self, id: DocId, bytes: &std::sync::Arc<Vec<u8>>, destination: &str) -> Result<(), String> {
+        let Some(dir) = self.folio.directory.as_deref() else { return Ok(()) };
+        let Some(doc) = self.session.get(id) else { return Ok(()) };
+        let saved = doc.saved_bytes();
+        if saved.as_slice() == bytes.as_slice() {
+            return Ok(());
+        }
+        let old = DocumentKey::of(&saved);
+        let Some(reading) = library::load_for_revision(dir, &old).map_err(|error| error.to_string())? else { return Ok(()) };
+        let Some((key, state)) = doc.rebase_folio_reading(bytes, &reading).map_err(|error| error.to_string())? else {
+            return Err("Folio reading data stays attached to the previous PDF revision".into());
+        };
+        let retained_all = state.annotations.len() == reading.annotations.len() && state.bookmarks.len() == reading.bookmarks.len();
+        let name = Path::new(destination).file_name().and_then(|name| name.to_str()).map(str::to_owned);
+        let record = BackupDocument { key, name, path: Some(destination.into()), page_count: Some(doc.info.pages.len() as u32), state };
+        let report = library::import(dir, &[record]).map_err(|error| error.to_string())?;
+        if !report.conflicts.is_empty() {
+            return Err("The saved PDF already has its own Folio reading data".into());
+        }
+        if !retained_all {
+            return Err("Folio marks on changed pages stay attached to the previous PDF revision".into());
+        }
+        Ok(())
+    }
+
     pub fn set_folio_data_dir(&mut self, directory: Option<PathBuf>) {
         self.folio.directory = directory;
     }

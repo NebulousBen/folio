@@ -307,6 +307,7 @@ impl PdfCraftApp {
             self.notify_fmt("Couldn't save {name}: {e}", &[("name", dest), ("e", &e.to_string())]);
             return false;
         }
+        let folio_save = self.carry_folio_save(id, &bytes, dest);
         // Our own write is not a change on disk to reload (#431).
         self.watch.known_now(id, dest);
         match self.session.mark_saved(id, bytes, Some(dest.to_string())) {
@@ -326,7 +327,11 @@ impl PdfCraftApp {
                     view.redactions_undone_after_save = 0;
                     view.saved_redactions_cut_off = false;
                 }
-                self.notify_fmt("Saved {name}", &[("name", &short_name(dest))]);
+                if let Err(error) = folio_save {
+                    self.notify_fmt("Saved {name}. {e}", &[("name", &short_name(dest)), ("e", &error)]);
+                } else {
+                    self.notify_fmt("Saved {name}", &[("name", &short_name(dest))]);
+                }
                 #[cfg(target_os = "macos")]
                 crate::macos_association::repair(std::path::Path::new(dest));
                 true

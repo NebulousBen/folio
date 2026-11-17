@@ -104,6 +104,12 @@ pub fn load(root: &Path, key: &DocumentKey, page_count: u32) -> Result<Option<Re
     Ok(Some(record.state))
 }
 
+pub fn load_for_revision(root: &Path, key: &DocumentKey) -> Result<Option<Reading>, ReadingError> {
+    let Some(record) = load_record(root, key)? else { return Ok(None) };
+    record.state.validate(record.page_count)?;
+    Ok(Some(record.state))
+}
+
 pub fn local_pdf(root: &Path, key: &DocumentKey) -> Result<Option<PathBuf>, ReadingError> {
     Ok(load_record(root, key)?.and_then(|record| record.path).map(PathBuf::from))
 }
