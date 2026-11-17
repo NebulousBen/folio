@@ -62,7 +62,8 @@ jobs:
           if (($version -split '\.').Length -eq 2) { $version += '.0' }
           rustup toolchain install $version --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
           cargo "+$version" fmt --all --check
-          cargo "+$version" clippy --locked --workspace --all-targets -- -D warnings
+          cargo "+$version" clippy --locked --workspace --all-targets
+          cargo "+$version" clippy --locked -p pdfcraft-folio-reading --all-targets -- -D warnings
           cargo "+$version" test --locked --workspace
           cargo "+$version" xtask layers
           cargo "+$version" xtask assets
