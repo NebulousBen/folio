@@ -22,6 +22,11 @@ fn main() {
     println!("cargo:rerun-if-changed=../../assets/app-icon/pdfcraft-document.ico");
     println!("cargo:rerun-if-changed=src/windows_manifest.rs");
     println!("cargo:rerun-if-env-changed=PDFCRAFT_REQUIRE_WINRES");
+    println!("cargo:rerun-if-env-changed=FOLIO_BUILD_VERSION");
+    println!("cargo:rustc-check-cfg=cfg(folio_packaged)");
+    if std::env::var_os("FOLIO_BUILD_VERSION").is_some() {
+        println!("cargo:rustc-cfg=folio_packaged");
+    }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
@@ -40,6 +45,19 @@ fn main() {
         .set("LegalCopyright", "Copyright (c) the PdfCraft contributors. MIT OR Apache-2.0.")
         .set("OriginalFilename", "Folio.exe")
         .set("InternalName", "Folio");
+    if let Ok(version) = std::env::var("FOLIO_BUILD_VERSION") {
+        let parts: Option<Vec<u16>> = version.split('.').map(|part| part.parse().ok()).collect();
+        if let Some([major, minor, patch]) = parts.as_deref() {
+            let value = (u64::from(*major) << 48) | (u64::from(*minor) << 32) | (u64::from(*patch) << 16);
+            res.set("FileVersion", &version)
+                .set("ProductVersion", &version)
+                .set_version_info(winresource::VersionInfo::FILEVERSION, value)
+                .set_version_info(winresource::VersionInfo::PRODUCTVERSION, value);
+        } else {
+            println!("cargo::error=FOLIO_BUILD_VERSION must be a three-part numeric version");
+            return;
+        }
+    }
     if let Err(e) = res.compile() {
         if std::env::var_os("PDFCRAFT_REQUIRE_WINRES").is_some() {
             println!("cargo::error=embedding Windows resources failed: {e}");

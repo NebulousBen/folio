@@ -23,10 +23,10 @@
 //! app doesn't start if it can't.
 //! Agents then drive it with `pdfcraft-cli ui --control <file> <method> …`.
 
-// Release builds on Windows are GUI-subsystem programs, so launching the app doesn't open a console
+// Packaged builds on Windows are GUI-subsystem programs, so launching the app doesn't open a console
 // window next to it (#57). `--version` and diagnostics then go nowhere when started from a terminal
 // (std ignores the missing console handles, so nothing fails); debug builds keep the console.
-#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+#![cfg_attr(all(windows, any(not(debug_assertions), folio_packaged)), windows_subsystem = "windows")]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use std::cell::Cell;
@@ -52,7 +52,7 @@ mod text_scale;
 mod windows_manifest;
 
 /// Freedesktop app id: the `.desktop` file name and the hicolor icon name.
-const APP_ID: &str = "com.folio.reader";
+const APP_ID: &str = "ai.storyteller.pdfcraft";
 
 const APP_ICON_PNG: &[u8] = include_bytes!("../../../assets/app-icon/folio.png");
 
