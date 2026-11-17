@@ -238,3 +238,39 @@ Use only the supplied PDF. Verify every annotation against the source geometry a
 "#);
     body
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_prepared_handoff_reuses_its_snapshot_and_keeps_an_existing_result() {
+        let library = tempfile::tempdir().unwrap();
+        let excerpt = b"disposable excerpt";
+        let handoff = Handoff {
+            version: 1,
+            source_key: DocumentKey::of(b"source PDF"),
+            excerpt_key: DocumentKey::of(excerpt),
+            source_name: "Fixture.pdf".into(),
+            name: "Argument outline".into(),
+            purpose: "Identify the conclusion".into(),
+            instructions: String::new(),
+            density: Density::Balanced,
+            pages: vec![Page { source_page: 5, label: "3".into() }],
+        };
+        let folder = prepare(library.path(), &handoff, excerpt).unwrap();
+        fs::write(folder.join(RESULT), b"completed work").unwrap();
+        assert_eq!(prepare(library.path(), &handoff, excerpt).unwrap(), folder);
+        assert_eq!(fs::read(folder.join(RESULT)).unwrap(), b"completed work");
+        assert!(fs::read_to_string(folder.join(INSTRUCTIONS)).unwrap().contains("| 1 | 5 | 3 |"));
+        assert_eq!(for_source(library.path(), &handoff.source_key).unwrap(), vec![(folder, handoff)]);
+    }
+
+    #[test]
+    fn selected_pages_are_bounded_and_in_physical_order() {
+        assert_eq!(parse_ranges("8, 2-5, 4, 10", 10).unwrap(), [2, 3, 4, 5, 8, 10]);
+        assert!(parse_ranges("2-1", 10).is_err());
+        assert!(parse_ranges("1-251", 500).is_err());
+        assert!(parse_ranges("0", 500).is_err());
+    }
+}

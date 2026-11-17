@@ -10,7 +10,9 @@ use serde::Deserialize;
 use crate::{Backup, BackupDocument, DocumentKey, MAX_BACKUP_SIZE, MAX_READING_SIZE, Reading, ReadingError};
 
 pub mod handoff;
+mod history;
 pub mod workspaces;
+pub use history::{Checkpoint, checkpoints};
 
 const MAX_DOCUMENTS: usize = 50_000;
 
@@ -152,8 +154,12 @@ pub fn save(root: &Path, record: &BackupDocument, expected: Option<&Reading>) ->
     let dir = root.join("documents");
     fs::create_dir_all(&dir)?;
     let _lock = lock_document(&dir, &record.key)?;
-    if load(root, &record.key, page_count)?.as_ref() != expected {
+    let current = load(root, &record.key, page_count)?;
+    if current.as_ref() != expected {
         return Err(ReadingError::Conflict);
+    }
+    if let Some(previous) = current.filter(|reading| reading != &record.state) {
+        history::remember(root, &record.key, previous)?;
     }
     stage(&dir, record)?.persist(document_path(root, &record.key)).map_err(|error| error.error)?;
     Ok(())
@@ -248,5 +254,8 @@ mod tests {
         record.state.page = 3;
         assert!(matches!(save(root.path(), &record, Some(&starting)), Err(ReadingError::Conflict)));
         assert_eq!(load(root.path(), &key, 3).unwrap().unwrap().page, 2);
+        let previous = checkpoints(root.path(), &key, 3).unwrap();
+        assert_eq!(previous.len(), 1);
+        assert_eq!(previous[0].state, starting);
     }
 }

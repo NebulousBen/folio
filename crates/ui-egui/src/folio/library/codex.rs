@@ -1,4 +1,5 @@
 //! The optional Codex local transport. Analysis only returns structured proposals.
+use std::collections::VecDeque;
 use std::io::{BufRead as _, BufReader, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -34,6 +35,7 @@ pub(super) struct Client {
     child: Child,
     input: Option<ChildStdin>,
     receiver: Receiver<Result<Value, String>>,
+    pending_turn: VecDeque<Value>,
     next_id: u64,
 }
 
@@ -54,7 +56,7 @@ impl Client {
         let (sender, receiver) = mpsc::sync_channel(32);
         let input = child.stdin.take();
         let output = child.stdout.take();
-        let mut client = Self { child, input, receiver, next_id: 0 };
+        let mut client = Self { child, input, receiver, pending_turn: VecDeque::new(), next_id: 0 };
         let output = output.ok_or_else(|| error("Codex did not open an output pipe"))?;
         std::thread::Builder::new().name("folio-codex-events".into()).spawn(move || {
             let mut reader = BufReader::new(output);
@@ -93,6 +95,7 @@ impl Client {
     }
 
     pub(super) fn analyse(&mut self, directory: &Path, input: &str, schema: &Value, cancelled: &AtomicBool) -> Result<Value, ReadingError> {
+        self.pending_turn.clear();
         let thread = self.request("thread/start", json!({
             "cwd":directory,
             "approvalPolicy":"never",
@@ -132,7 +135,8 @@ impl Client {
         let deadline = Instant::now() + Duration::from_secs(900);
         let mut response = None;
         loop {
-            let value = match self.receive(deadline, cancelled) {
+            let next = self.pending_turn.pop_front().map_or_else(|| self.receive(deadline, cancelled), Ok);
+            let value = match next {
                 Ok(value) => value,
                 Err(cause) => {
                     let _ = self.send(json!({"id":self.next_id + 1,"method":"turn/interrupt","params":{"threadId":id,"turnId":turn_id}}));
@@ -172,6 +176,17 @@ impl Client {
                     return Err(error(message));
                 }
                 return Ok(value["result"].clone());
+            }
+            let event = match value["method"].as_str() {
+                Some("turn/completed") => true,
+                Some("item/completed") => value["params"]["item"]["type"].as_str() == Some("agentMessage"),
+                _ => false,
+            };
+            if method == "turn/start" && event {
+                if self.pending_turn.len() >= 8 {
+                    return Err(error("Codex sent too many events before starting its turn"));
+                }
+                self.pending_turn.push_back(value);
             }
         }
     }

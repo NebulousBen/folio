@@ -40,6 +40,7 @@ struct Notes {
     selected_bookmarks: BTreeSet<String>,
     editor: Option<edit::Editor>,
     handoff: handoff::HandoffUi,
+    history: Option<Result<Vec<library::Checkpoint>, String>>,
 }
 
 impl PdfCraftApp {
@@ -112,6 +113,7 @@ fn notes_for(app: &PdfCraftApp, id: DocId) -> Result<Option<Notes>, String> {
         selected_bookmarks: BTreeSet::new(),
         editor: None,
         handoff: Default::default(),
+        history: None,
     }))
 }
 
@@ -131,6 +133,7 @@ fn commit_reading(app: &mut PdfCraftApp, notes: &mut Notes, state: Reading) -> R
     library::save(dir, &fields, notes.saved.as_ref()).map_err(|error| error.to_string())?;
     notes.reading = fields.state;
     notes.saved = Some(notes.reading.clone());
+    notes.history = None;
     if let Some(view) = app.views.iter_mut().find(|view| view.id == notes.document) {
         view.folio_overlay = None;
     }
@@ -236,6 +239,7 @@ fn show_notes(app: &mut PdfCraftApp, ctx: &egui::Context, mut notes: Notes) {
                 edit::tools(app, ui, &mut notes, page, page_count);
                 source_links(app, ui, &notes, page);
                 handoff::show(app, ui, &mut notes, page, page_count);
+                show_history(app, ui, &mut notes, page_count);
             }
             jump = notes_ui(ui, &mut notes);
             if !notes.reading.bookmarks.is_empty() {
@@ -270,6 +274,49 @@ fn show_notes(app: &mut PdfCraftApp, ctx: &egui::Context, mut notes: Notes) {
     }
     if open && app.session.get(notes.document).is_some() {
         app.folio.notes = Some(notes);
+    }
+}
+
+fn show_history(app: &mut PdfCraftApp, ui: &mut egui::Ui, notes: &mut Notes, page_count: u32) {
+    let Some(dir) = app.folio.directory.as_deref() else { return };
+    let mut restore = None;
+    ui.collapsing("Reading history", |ui| {
+        let history = notes.history.get_or_insert_with(|| library::checkpoints(dir, &notes.key, page_count).map_err(|error| error.to_string()));
+        match history {
+            Ok(checkpoints) if checkpoints.is_empty() => {
+                ui.label("No checkpoints are available yet");
+            }
+            Ok(checkpoints) => {
+                egui::ScrollArea::vertical().id_salt("reading_checkpoints").max_height(180.0).show(ui, |ui| {
+                    for (index, entry) in checkpoints.iter().enumerate() {
+                        ui.push_id(index, |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(format!("{} · {}", entry.created_at, entry.reason));
+                                ui.small(format!("{} marks · {} bookmarks", entry.state.annotations.len(), entry.state.bookmarks.len()));
+                                if ui.button("Restore checkpoint").clicked() {
+                                    restore = Some(entry.state.clone());
+                                }
+                            });
+                        });
+                    }
+                });
+            }
+            Err(error) => {
+                ui.label(error.as_str());
+            }
+        }
+    });
+    if let Some(state) = restore {
+        match commit_reading(app, notes, state) {
+            Ok(()) => {
+                notes.editor = None;
+                notes.layer = None;
+                notes.category = None;
+                notes.selected_bookmarks.clear();
+                app.notify_tr("Reading checkpoint restored");
+            }
+            Err(error) => app.notify_error(error),
+        }
     }
 }
 
