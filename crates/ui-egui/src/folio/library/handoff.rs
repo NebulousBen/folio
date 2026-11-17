@@ -56,11 +56,12 @@ pub(super) fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui, notes: &mut Notes, 
         }
     }
     ui.collapsing("AI reading handoffs", |ui| {
-        if notes.handoff.pages.is_empty() && !ui.memory(|m| m.has_focus(ui.id().with("handoff_pages"))) {
+        let pages_id = ui.scope_id().with("handoff_pages");
+        if notes.handoff.pages.is_empty() && !ui.memory(|m| m.has_focus(pages_id)) {
             notes.handoff.pages = page.to_string();
         }
         ui.add(egui::TextEdit::singleline(&mut notes.handoff.name).hint_text("Reading name")).accessible_name("Reading name");
-        ui.add(egui::TextEdit::singleline(&mut notes.handoff.pages).id(ui.id().with("handoff_pages")).hint_text("Physical pages, e.g. 1, 3-5"))
+        ui.add(egui::TextEdit::singleline(&mut notes.handoff.pages).id(pages_id).hint_text("Physical pages, e.g. 1, 3-5"))
             .accessible_name("Physical pages");
         ui.add(egui::TextEdit::singleline(&mut notes.handoff.purpose).hint_text("Reading purpose")).accessible_name("Reading purpose");
         ui.add(egui::TextEdit::multiline(&mut notes.handoff.instructions).hint_text("Additional instructions").desired_rows(2))

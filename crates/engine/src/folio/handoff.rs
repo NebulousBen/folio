@@ -194,7 +194,7 @@ fn read_mark(
             let Some((category, ..)) = PALETTE.iter().take(5).find(|row| row.1.eq_ignore_ascii_case(subject.trim())) else {
                 return Err(invalid(format!("Highlight has an unknown category on source page {page}")));
             };
-            let quads = value(b"QuadPoints")
+            let quads: Vec<[f64; 8]> = value(b"QuadPoints")
                 .and_then(|v| {
                     let values: Vec<f64> = v.as_array()?.iter().map(|p| pdf.resolve(p).as_f64()).collect::<Option<_>>()?;
                     values.chunks(8).map(|q| <[f64; 8]>::try_from(q).ok()).collect()
@@ -214,7 +214,7 @@ fn read_mark(
                 "Export" => (SectionRole::Export, "export"),
                 _ => return Err(invalid("Folio brackets must be Import or Export")),
             };
-            let quads = serde_json::from_str(&string(b"FolioSectionQuads")).map_err(pdf_error)?;
+            let quads: Vec<[f64; 8]> = serde_json::from_str(&string(b"FolioSectionQuads")).map_err(pdf_error)?;
             if let Some(body) = contents.strip_prefix(title) {
                 contents = body.trim_start().into();
             }
