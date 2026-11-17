@@ -44,7 +44,7 @@ impl PdfCraftApp {
         let mark = if dirty { " •" } else { "" };
         let titled = |name: Option<String>| {
             name.or_else(|| self.combine_showing().then(|| tl!("Combine files").to_owned()))
-                .map_or_else(|| "PdfCraft".to_owned(), |name| format!("{name}{mark} — PdfCraft"))
+                .map_or_else(|| "Folio".to_owned(), |name| format!("{name}{mark} — Folio"))
         };
         let title = titled(front.and_then(|i| crate::canvas::tab_label(self, i)));
         // The web page's title is what an embedding host reads to tell which file opened, so it
@@ -67,6 +67,8 @@ impl PdfCraftApp {
     /// Construct default session, panels, theme and control state with no active property-edit session.
     pub fn new() -> Self {
         Self {
+            #[cfg(not(target_arch = "wasm32"))]
+            folio: Default::default(),
             panes: Default::default(),
             session: Session::new(),
             status_captions_lang: None,
@@ -102,6 +104,7 @@ impl PdfCraftApp {
             // A fresh install follows the desktop's appearance (#1248); saved settings override.
             theme_preference: ThemePreference::System,
             reading_colors: Default::default(),
+            paper_appearance: Default::default(),
             show_page_edge_shadows: true,
             #[cfg(target_os = "linux")]
             desktop_theme: None,
@@ -916,6 +919,8 @@ impl PdfCraftApp {
         self.process_pending_edits();
         palette::show(self, &ctx);
         dialogs::show(self, &ctx);
+        #[cfg(not(target_arch = "wasm32"))]
+        folio::show(self, &ctx);
         self.show_progress(&ctx);
         widgets::toast(self, &ctx);
         self.finish_render_frame(&ctx);

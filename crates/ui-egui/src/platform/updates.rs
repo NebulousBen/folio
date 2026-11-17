@@ -9,9 +9,6 @@ use craft_update::{CheckResultDialog, CheckResultResponse};
 
 use crate::PdfCraftApp;
 
-/// Where every PdfCraft release is listed.
-pub const RELEASES_PAGE: &str = "https://github.com/storytold/pdfcraft/releases";
-
 /// Stands in for the network in tests.
 #[cfg(not(target_arch = "wasm32"))]
 pub type UpdateSource = CheckSource;
@@ -55,7 +52,7 @@ impl Default for Updates {
     fn default() -> Self {
         Self {
             #[cfg(not(target_arch = "wasm32"))]
-            updater: Updater::new(&crate::UPDATE_APP, env!("CARGO_PKG_VERSION")),
+            updater: Updater::new(&crate::UPDATE_APP, pdfcraft_engine::folio::VERSION),
             open: false,
             #[cfg(not(target_arch = "wasm32"))]
             startup_check: false,
@@ -113,25 +110,30 @@ impl PdfCraftApp {
     /// Whether the app asks for a newer release on its first frame (off until the desktop app turns it on).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn set_startup_update_check(&mut self, on: bool) {
-        self.updates.startup_check = on;
+        self.updates.startup_check = on && crate::FOLIO_RELEASE_REPO.is_some();
     }
 
     /// Replaces the network with `source` (tests).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn set_update_source(&mut self, source: UpdateSource) {
-        self.updates.updater = Updater::new(&crate::UPDATE_APP, env!("CARGO_PKG_VERSION")).with_source(source);
+        self.updates.updater = Updater::new(&crate::UPDATE_APP, pdfcraft_engine::folio::VERSION).with_source(source);
     }
 
     /// Help ▸ Check for updates: ask for the latest release and show the outcome.
     pub fn check_for_updates(&mut self) {
+        let Some(repo) = crate::FOLIO_RELEASE_REPO else {
+            self.notify_tr("This build has no Folio release channel");
+            return;
+        };
         #[cfg(not(target_arch = "wasm32"))]
         {
+            let _ = repo;
             self.updates.open = true;
             self.updates.check_requested = true;
         }
         #[cfg(target_arch = "wasm32")]
         {
-            self.open_url(RELEASES_PAGE);
+            self.open_url(&format!("https://github.com/{repo}/releases"));
         }
     }
 
@@ -171,7 +173,7 @@ pub(crate) fn dialog(app: &mut PdfCraftApp, ctx: &egui::Context) {
             app.updates.open = false;
         }
         if app.updates.open {
-            let dialog = CheckResultDialog::new(&crate::UPDATE_APP, env!("CARGO_PKG_VERSION"));
+            let dialog = CheckResultDialog::new(&crate::UPDATE_APP, pdfcraft_engine::folio::VERSION);
             let response = dialog.show(ctx, app.updates.updater.status());
             answer_result(app, ctx, response);
         }

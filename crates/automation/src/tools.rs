@@ -194,6 +194,11 @@ pub fn tools() -> Vec<ToolDef> {
         t("doc_close", "Close a document", "Close a document. Fails if it has unsaved changes unless discard_changes is true.")
             .cmd("file.close")
             .with(schema(json!({ "doc": doc(), "discard_changes": { "type": "boolean" } }), &["doc"])),
+        t("folio_reading_info", "Read embedded Folio notes", "Read the Folio layers, notes, brackets and bookmarks embedded in an open PDF. Returns null when the document has no embedded reading.")
+            .ro()
+            .with(schema(json!({ "doc": doc() }), &["doc"])),
+        t("folio_extract_bookmarks", "Extract Folio bookmark ranges", "Open a new document containing the selected bookmark ranges, with their original-page mappings. Use bookmark IDs from folio_reading_info.")
+            .with(schema(json!({ "doc": doc(), "bookmarks": { "type": "array", "items": { "type": "string" }, "minItems": 1 } }), &["doc", "bookmarks"])),
         t(
             "doc_save",
             "Save a document",

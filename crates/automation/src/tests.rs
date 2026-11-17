@@ -39,6 +39,28 @@ fn search_document(a: &mut Automation, pages: usize) -> DocId {
 }
 
 #[test]
+fn folio_reading_info_preserves_unicode_and_page_ranges() {
+    let mut a = Automation::new();
+    let plain = search_document(&mut a, 2);
+    assert_eq!(json(&mut a, "folio_reading_info", json!({"doc": plain.0})), json!({"reading": null}));
+
+    let state = json!({
+        "version": 1, "page": 1, "zoom": "width", "rotation": 0, "annotations": [],
+        "bookmarks": [{"id": "book", "page": 1, "endPage": 2, "label": "Ἀρχή"}]
+    });
+    let mut file = pdfcraft_cos::Document::open(Arc::new(numbered_pages(2))).unwrap();
+    let root = file.root().unwrap();
+    file.update_dict(root, |dict| dict.set("FolioReadingData", pdfcraft_cos::PdfString::text(&state.to_string()))).unwrap();
+    let bytes = pdfcraft_cos::write_full(&file, &pdfcraft_cos::SaveOptions::default()).unwrap();
+    let id = a.session.open("folio.pdf", None, Arc::new(bytes), None).unwrap();
+    assert_eq!(json(&mut a, "folio_reading_info", json!({"doc": id.0})), json!({"reading": state}));
+    let extracted = json(&mut a, "folio_extract_bookmarks", json!({"doc": id.0, "bookmarks": ["book"]}));
+    let new_id = extracted["document"]["doc"].as_u64().unwrap();
+    let notes = json(&mut a, "folio_reading_info", json!({"doc": new_id}));
+    assert_eq!(notes["reading"]["selectionSources"][0]["pages"], json!([{"page": 1, "sourcePage": 1}, {"page": 2, "sourcePage": 2}]));
+}
+
+#[test]
 fn form_fill_cannot_print_but_js_run_can() {
     let mut a = Automation::new();
     let doc = search_document(&mut a, 1);

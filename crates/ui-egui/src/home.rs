@@ -76,13 +76,25 @@ pub fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         egui::Frame::NONE.inner_margin(egui::Margin { left: 36, right: 36, top: 28, bottom: 28 }).show(ui, |ui| {
-            ui.label(egui::RichText::new(tl!("Welcome to PdfCraft")).font(theme::semibold(24.0)));
+            ui.label(egui::RichText::new(tl!("Welcome to Folio")).font(theme::semibold(24.0)));
             ui.label(
                 egui::RichText::new(tl!("An open-source PDF workbench — local, private, and scriptable."))
                     .color(t.text_muted)
                     .font(theme::regular(14.0)),
             );
             ui.add_space(14.0);
+            #[cfg(not(target_arch = "wasm32"))]
+            ui.horizontal_wrapped(|ui| {
+                if ui.button("Reading workspaces").clicked() {
+                    app.folio_open_workspaces();
+                }
+                if ui.button("Preview existing Folio library").clicked() {
+                    app.folio_preview_profile(ui.ctx());
+                }
+                if ui.button("Import Folio backup…").clicked() {
+                    app.folio_pick_backup(ui.ctx());
+                }
+            });
             if !app.community_card_closed {
                 egui::Frame::NONE
                     .fill(t.card)
@@ -92,9 +104,8 @@ pub fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.horizontal(|ui| {
-                            widgets::artcraft_mark(ui, 28.0);
                             ui.vertical(|ui| {
-                                ui.label(egui::RichText::new(tl!("Join the ArtCraft community")).font(theme::semibold(15.0)));
+                                ui.label(egui::RichText::new(tl!("PDFCraft upstream community")).font(theme::semibold(15.0)));
                                 ui.label(egui::RichText::new(tl!("Get help, share feedback and follow development on Discord.")).color(t.text_muted));
                             });
                             // Closed for this run only: the card is back on the next launch.

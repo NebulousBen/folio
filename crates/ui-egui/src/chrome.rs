@@ -606,6 +606,10 @@ pub fn mode_bar(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                 if hidden.toolbar {
                     return;
                 }
+                #[cfg(not(target_arch = "wasm32"))]
+                if app.active.is_some() && widgets::ghost_button(ui, "book-open", "Reading notes").clicked() {
+                    app.show_folio_notes();
+                }
                 // Acrobat's mode bar has no Read tab: reading is what the viewer does with no tool
                 // in use. Read mode (the panes hidden) stays a View command and a default workspace.
                 let modes = [(Mode::AllTools, "All tools"), (Mode::Edit, "Edit"), (Mode::Convert, "Convert"), (Mode::Sign, "E-Sign")];

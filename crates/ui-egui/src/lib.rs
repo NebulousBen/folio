@@ -9,13 +9,23 @@
 // The settings object in `persist` is one `json!` literal past the default limit of 128.
 #![recursion_limit = "256"]
 
-/// PdfCraft as craft-update knows it, with its 128 px icon and accent colour: the update
-/// prompt shows both, and an AppImage's menu entry gets the icon.
+/// Each packaged build names its own GitHub release repository at compile time.
+pub(crate) const FOLIO_RELEASE_REPO: Option<&str> = option_env!("FOLIO_RELEASE_REPO");
+
 #[cfg(not(target_arch = "wasm32"))]
 pub const UPDATE_APP: craft_update::app::App = craft_update::app::App {
-    icon_png: Some(include_bytes!("../../../assets/app-icon/hicolor/128x128/apps/ai.storyteller.pdfcraft.png")),
-    accent: Some([0xb7, 0x02, 0x28]),
-    ..craft_update::suite::PDFCRAFT
+    icon_png: Some(include_bytes!("../../../assets/app-icon/folio.png")),
+    accent: Some([0x65, 0x7a, 0x54]),
+    developer: "Folio",
+    ..craft_update::app::App::new(
+        "folio",
+        "Folio",
+        "PDF reader and editor",
+        match FOLIO_RELEASE_REPO {
+            Some(repo) => repo,
+            None => "",
+        },
+    )
 };
 
 use crate::control::Host as _;
@@ -36,6 +46,8 @@ macro_rules! tl_ctx {
 }
 pub mod canvas;
 mod chrome;
+mod folio;
+use folio::word_count as folio_word_count;
 mod image_engine;
 pub use combine_grid::ThumbState as CombineThumb;
 pub use combine_ui::{Columns as CombineColumns, CombineView, Lock as CombineLock, SortKey};
@@ -306,6 +318,8 @@ struct PendingDestination {
 }
 
 pub struct PdfCraftApp {
+    #[cfg(not(target_arch = "wasm32"))]
+    folio: folio::ReadingUi,
     /// Split view (`panes`); which pane shows each tab is its view's.
     pub panes: panes::Panes,
     /// Tools side and pane widths; which panes are open is `left_open` and `right`.
@@ -375,6 +389,7 @@ pub struct PdfCraftApp {
     /// The reading-colours preference (Preferences ▸ Reading colours): applied to every open
     /// document, and documents open with it (Acrobat's Replace Document Colors).
     pub reading_colors: pdfcraft_render::ReadingColors,
+    pub(crate) paper_appearance: folio::PaperAppearance,
     /// App-wide page decoration only; never part of a PDF edit or render request.
     pub show_page_edge_shadows: bool,
     /// The Linux portal is enabled only by the native host, and starts on the first System choice.

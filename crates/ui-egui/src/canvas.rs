@@ -484,6 +484,8 @@ pub struct DocView {
     /// views of one document apart (`crate::panes`).
     pub(crate) pane: crate::panes::ViewPane,
     pub id: DocId,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) folio_overlay: Option<crate::folio::overlay::Overlay>,
     /// The document and attached file this tab was opened from, when a form or the Attachments
     /// panel opened it: asking for that attachment again comes back to this tab.
     pub from_attachment: Option<(DocId, String)>,
@@ -527,6 +529,8 @@ pub struct DocView {
     /// (fractions of the displayed page; `None` leaves that axis to `goto`) to put `rel` points
     /// from the viewport's top-left corner.
     goto_point: Option<(usize, Option<f32>, Option<f32>, Vec2)>,
+    #[cfg(not(target_arch = "wasm32"))]
+    folio_position: Option<[f32; 2]>,
     /// Pending keyboard scrolling, in points down (negative: up): ↓ / ↑, and Page Down /
     /// Page Up where the pages scroll.
     pub key_scroll: f32,
@@ -1024,6 +1028,8 @@ impl DocView {
         Self {
             pane: Default::default(),
             id,
+            #[cfg(not(target_arch = "wasm32"))]
+            folio_overlay: None,
             from_attachment: None,
             zoom: defaults.zoom,
             fit: defaults.fit,
@@ -1047,6 +1053,8 @@ impl DocView {
             goto: None,
             goto_side: None,
             goto_point: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            folio_position: None,
             key_scroll: 0.0,
             key_side: 0.0,
             side_edges: None,
@@ -1744,6 +1752,12 @@ fn draw_page(ui: &mut egui::Ui, view: &mut DocView, frame: &mut PageFrame<'_>, i
     let xf = PageXform { rect: r, rot: view.rotation, pw: info.pages[i].width.max(1.0), ph: info.pages[i].height.max(1.0) };
     paint_page_surface(ui, view, frame, &PageSlot { i, r, xf });
     let painter = ui.painter();
+    #[cfg(not(target_arch = "wasm32"))]
+    if !doc.dirty
+        && let Some(overlay) = &view.folio_overlay
+    {
+        overlay.paint(painter, i, &xf, &info.pages[i]);
+    }
     view.text_background.paint(painter, &xf, i, view.line_editor.as_ref(), view.content.draft.as_ref());
     if editing_content {
         view.move_background.paint(painter, &xf, i, info, &view.content, pointer);
@@ -3133,6 +3147,11 @@ fn hold_sharp_renders(ui: &egui::Ui, view: &mut DocView, scale: f32) -> bool {
 /// A destination's position (bookmarks, links) refines `goto`: its point at the window's top-left,
 /// or the centre of a /FitR rectangle at the window's centre.
 fn refine_goto_point(mut scroll: egui::ScrollArea, view: &mut DocView, geometry: &ScrollGeometry<'_>) -> egui::ScrollArea {
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some([x, y]) = view.folio_position.take() {
+        let anchor = vec2(view.viewport_w * 0.5, 64.0);
+        view.goto_point = Some((view.current, Some(x), Some(y), anchor));
+    }
     let ScrollGeometry { rects, y_shift, content_w, content_h, avail, .. } = *geometry;
     if let Some((page, fx, fy, rel)) = view.goto_point.take() {
         let r = rects[page.min(rects.len() - 1)];
@@ -3174,6 +3193,8 @@ fn fits_height(r: Rect, view_height: f32, pixels_per_point: f32) -> bool {
 /// scroll area with this frame's zoom, scrolling, tool input, overlays (form fields, comments,
 /// signature badges and sign tabs) and render requests.
 pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
+    #[cfg(not(target_arch = "wasm32"))]
+    crate::folio::overlay::refresh(app, index);
     let t = Tokens::get(ui.ctx());
     let can_paste_key = egui::Id::unique("can-paste-image");
     let can_paste_image = if ui.input(|i| i.pointer.secondary_pressed()) {

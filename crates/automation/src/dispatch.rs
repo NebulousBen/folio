@@ -62,6 +62,16 @@ impl Automation {
                 self.session.refresh_fonts(id);
                 info(self.doc(&a)?)
             }
+            "folio_reading_info" => {
+                let reading = self.doc(&a)?.folio_reading().map_err(|error| failed(error.to_string()))?;
+                json!({ "reading": reading })
+            }
+            "folio_extract_bookmarks" => {
+                let doc = self.doc(&a)?;
+                let reading = doc.folio_reading().map_err(failed)?.ok_or_else(|| failed("this PDF has no embedded Folio reading"))?;
+                let bytes = self.session.extract_folio_bookmarks(doc.id, &reading, &a.strs("bookmarks")?).map_err(failed)?;
+                self.deliver(&a, "Folio reading selection.pdf", bytes)?
+            }
             "doc_close" => self.doc_close(&a)?,
             "doc_save" => self.doc_save(&a)?,
             "doc_set_info" => {

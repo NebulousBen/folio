@@ -81,6 +81,7 @@ pub(crate) fn composer(ctx: &egui::Context, keys: PageKeys, view: &mut DocView, 
                 edit.request_focus();
                 c.focus = false;
             }
+            ui.label(crate::folio_word_count(&c.text));
             let enter = submit_key(ui, &edit, false);
             if keys.pressed(ui.ctx(), egui::Key::Escape) {
                 cancel = true;

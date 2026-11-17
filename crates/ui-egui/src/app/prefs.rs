@@ -115,6 +115,7 @@ impl PdfCraftApp {
             "units": self.units,
             "language": self.language,
             "reading_colors": self.reading_colors,
+            "paper_appearance": self.paper_appearance,
             // Null follows the system's text scaling.
             "ui_scale": self.ui_scale,
             "flatten_fill_sign": self.flatten_fill_sign_on_save,
@@ -177,6 +178,7 @@ impl PdfCraftApp {
         v["pinned_tools"] = serde_json::json!(self.pinned_tools);
         // Set outside json! above, which is at serde_json's macro recursion limit.
         v["hide_empty_highlight_hover"] = serde_json::Value::Bool(self.comment_prefs.hide_empty_highlight_hover);
+        v["smart_highlight"] = serde_json::Value::Bool(self.comment_prefs.smart_highlight);
         // The Print dialog's own paper sizes (print.page-setup).
         v["print_custom_papers"] = serde_json::json!(self.print_draft.custom_papers);
         v["show_page_edge_shadows"] = self.show_page_edge_shadows.into();
@@ -462,6 +464,9 @@ impl PdfCraftApp {
         if let Ok(colors) = serde_json::from_value::<pdfcraft_render::ReadingColors>(v["reading_colors"].clone()) {
             self.reading_colors = colors;
         }
+        if let Ok(paper) = serde_json::from_value::<crate::folio::PaperAppearance>(v["paper_appearance"].clone()) {
+            self.paper_appearance = paper.normalized();
+        }
         // Settings are untrusted: a size out of range follows the system instead.
         self.ui_scale = v["ui_scale"].as_f64().and_then(ui_scale::valid);
         // Settings are untrusted: an unusable pattern keeps the default.
@@ -478,6 +483,9 @@ impl PdfCraftApp {
         }
         if let Some(hide) = v["hide_empty_highlight_hover"].as_bool() {
             self.comment_prefs.hide_empty_highlight_hover = hide;
+        }
+        if let Some(smart) = v["smart_highlight"].as_bool() {
+            self.comment_prefs.smart_highlight = smart;
         }
         if let Some(pinned) = v["comment_tool_pinned"].as_bool() {
             self.comment_prefs.pinned = pinned;

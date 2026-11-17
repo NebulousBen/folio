@@ -94,6 +94,7 @@ impl PdfCraftApp {
 
 impl PdfCraftApp {
     pub(crate) fn finish_render_frame(&mut self, ctx: &egui::Context) {
+        self.paper_appearance.store_for_frame(ctx);
         self.finish_document_copy(ctx);
         // The Combine grid's thumbnails, whichever tab shows (renders under way still finish).
         self.combine_thumbs_frame(ctx);

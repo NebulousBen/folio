@@ -406,6 +406,8 @@ impl PdfCraftApp {
         }
         self.apply_initial_view(self.views.len() - 1, &initial);
         self.apply_viewer_preferences(self.views.len() - 1, &initial, activate);
+        #[cfg(not(target_arch = "wasm32"))]
+        crate::folio::overlay::restore_view(self, self.views.len() - 1);
         // Where the reader left off wins over the file's own initial view and the zoom its
         // viewer preferences open at (#1767).
         self.apply_last_view(self.views.len() - 1);
@@ -812,6 +814,12 @@ impl PdfCraftApp {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn open_path(&mut self, path: &str) -> OpenOutcome {
         self.open_path_then(path, None)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn open_folio_source(&mut self, path: &str, page: u32) {
+        let target = pdfcraft_render::RemoteDestination::Page { page: page.saturating_sub(1) as usize, view: pdfcraft_render::DestView::Top };
+        self.open_file_request(path, Some(target), None, None);
     }
 
     /// Keep a chosen tool with its file until preparation and any password entry finish. The

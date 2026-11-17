@@ -688,6 +688,13 @@ fn card_appearance(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens, ctx: &m
     crate::appearance::preferences_section_with_context(ui, app, t, ctx);
     ui.add_space(8.0);
     reading_colours_section(ui, app, t, ctx);
+    ui.add_space(8.0);
+    if app.paper_appearance.controls(ui) {
+        for view in &mut app.views {
+            view.invalidate_content();
+        }
+        ui.ctx().request_repaint();
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -874,6 +881,7 @@ fn card_identity(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens, ctx: &mut
         ui.add(crate::widgets::line(&mut app.comment_prefs.author).desired_width(240.0).char_limit(crate::MAX_AUTHOR_CHARS)).labelled_by(label.id);
     });
     ctx.checkbox(ui, &mut app.comment_prefs.hide_empty_highlight_hover, tl!("Hide hover previews for highlights without comment text"), t);
+    ctx.checkbox(ui, &mut app.comment_prefs.smart_highlight, tl!("Extend highlights and text comments to whole words"), t);
 }
 
 /// Content for Card 5: Fill & Sign

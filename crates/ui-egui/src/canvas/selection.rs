@@ -40,6 +40,19 @@ impl Selection {
             Span::Column { rect } => text.column_text(&text.glyphs_in(rect)),
         }
     }
+
+    fn whole_words(self, text: &PageText) -> Self {
+        let Span::Run { anchor, head } = self.span else { return self };
+        let start = anchor.min(head);
+        let end = anchor.max(head);
+        let word_at = |index: usize| {
+            text.glyphs.get(index).filter(|glyph| !glyph.text.trim().is_empty())?;
+            text.word_at(index)
+        };
+        let first = word_at(start).map_or(start, |(first, _)| first);
+        let last = word_at(end).map_or(end, |(_, last)| last);
+        Self::run(self.page, first, last)
+    }
 }
 
 /// The glyphs `clicks` quick clicks select around glyph `a`: two the word, three the line, more
@@ -55,11 +68,25 @@ pub(super) fn click_unit(text: &PageText, clicks: u32, a: usize) -> Option<(usiz
 impl DocView {
     /// The text selection as markup quadrilaterals in user space: (page, quads).
     pub(crate) fn selection_quads(&self, info: &DocInfo) -> Option<(usize, Vec<[f64; 8]>)> {
+        self.markup_quads(info, false)
+    }
+
+    pub(crate) fn markup_quads(&self, info: &DocInfo, whole_words: bool) -> Option<(usize, Vec<[f64; 8]>)> {
         let s = self.selection?;
         let text = self.texts.get(&s.page)?;
         let page = info.pages.get(s.page)?;
+        let s = if whole_words { s.whole_words(text) } else { s };
         let quads: Vec<[f64; 8]> = s.rects(text).into_iter().map(|r| page.view_rect_to_quad(r)).collect();
         (!quads.is_empty()).then_some((s.page, quads))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn reading_selection(&self, info: &DocInfo, whole_words: bool) -> Option<(usize, Vec<[f64; 8]>, String)> {
+        let (page, quads) = self.markup_quads(info, whole_words)?;
+        let text = self.texts.get(&page)?;
+        let selection = self.selection?;
+        let selection = if whole_words { selection.whole_words(text) } else { selection };
+        Some((page, quads, selection.text(text)))
     }
 
     pub(crate) fn clear_selection(&mut self) {
@@ -235,6 +262,10 @@ pub(super) fn selection_actions(
                 if ui.add_enabled(can_copy, egui::Button::new(tl!("Copy"))).clicked() {
                     chosen = Some(SelectionAction::Copy);
                 }
+                if can_copy {
+                    ui.separator();
+                    ui.label(crate::folio_word_count(&selected));
+                }
             });
         });
     });
@@ -244,7 +275,8 @@ pub(super) fn selection_actions(
         view.actions_dismissed = Some(selection);
         return true;
     }
-    let Some((page, quads)) = view.selection_quads(info) else { return false };
+    let smart = prefs.smart_highlight && matches!(action, SelectionAction::Note | SelectionAction::Markup(comments::CommentTool::Highlight));
+    let Some((page, quads)) = view.markup_quads(info, smart) else { return false };
     let last = quads.last().copied().unwrap_or_default();
     let at = [last[2].max(last[6]), last[1].max(last[3])];
     view.clear_selection();
@@ -273,4 +305,25 @@ pub(super) fn selection_actions(
         SelectionAction::Copy => {}
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pdfcraft_render::text::TextGlyph;
+
+    #[test]
+    fn smart_highlight_expands_both_ends_without_changing_the_copy_selection() {
+        let glyphs = "submarine travels"
+            .chars()
+            .map(|letter| TextGlyph { text: letter.to_string(), rect: [0.0; 4], quad: [[0.0; 2]; 4], direction: [1.0, 0.0] })
+            .collect::<Vec<_>>();
+        let page = PageText { line_of: vec![0; glyphs.len()], space_before: vec![false; glyphs.len()], glyphs, truncated: false };
+        let selected = Selection::run(0, 11, 2);
+        let expanded = selected.whole_words(&page);
+        assert_eq!(expanded.text(&page), "submarine travels");
+        assert_eq!(selected.text(&page), "bmarine tr");
+        let column = Selection { page: 0, span: Span::Column { rect: [0.0; 4] } };
+        assert_eq!(column.whole_words(&page), column);
+    }
 }

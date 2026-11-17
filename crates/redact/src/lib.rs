@@ -780,7 +780,7 @@ fn apply_within(doc: &mut Document, pages: Option<&[usize]>, images: pdfcraft_co
     pattern_guard::check_pruned_unreachable(doc, &pruned_patterns, first_page)?;
     // 6. The document's metadata must not keep what the pages no longer show (#2448).
     let scrubbed = metadata::scrub(doc, &removed_text, !removed_cut)?;
-    report.metadata = scrubbed.removed;
+    report.metadata = scrubbed.removed + sanitize::drop_folio_reading(doc)?;
     report.identification = scrubbed.identification;
     // Last of what leaves: an image that left with any of the above, the metadata removed just
     // now included, is a user of a dictionary too. Storing images again changes no page's content

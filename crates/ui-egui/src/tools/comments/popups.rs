@@ -224,6 +224,7 @@ fn text_box(ui: &mut egui::Ui, parts: &mut Parts<'_>, a: &Annotation, name: &str
         if field.changed() {
             parts.cv.popup_text = Some((a.page, a.index, text.clone()));
         }
+        ui.label(crate::folio_word_count(&text));
         if field.lost_focus()
             && let Some((_, _, s)) = parts.cv.popup_text.take_if(|(p, i, _)| (*p, *i) == key)
             && s.trim_end() != a.contents.as_deref().unwrap_or_default()

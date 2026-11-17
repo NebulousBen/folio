@@ -717,7 +717,10 @@ impl DocView {
             return 0;
         }
         // The length was checked above, so the renderer's buffer becomes the texture data as is.
-        let img = texture_image([r.width as usize, r.height as usize], r.rgba);
+        let mut img = texture_image([r.width as usize, r.height as usize], r.rgba);
+        if r.request.tag & (PRINT_TAG | GRID_TAG | THUMB_TAG) == 0 {
+            crate::folio::PaperAppearance::raster(ctx, &mut img);
+        }
         if let Some(t) = r.request.tile {
             let key = (page, r.request.tag, t.x, t.y);
             let tex = ctx.load_texture(format!("tile-{:?}-{page}-{}-{}", self.id, t.x, t.y), img, TextureOptions::LINEAR);

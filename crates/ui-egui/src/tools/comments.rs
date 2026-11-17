@@ -330,6 +330,8 @@ pub struct CommentPrefs {
     pub group_tool: [CommentTool; 3],
     /// Hide hover previews on highlight annotations when they contain no comment text beyond the author.
     pub hide_empty_highlight_hover: bool,
+    /// Extend the endpoints of a highlight or text comment to whole words.
+    pub smart_highlight: bool,
 }
 
 impl Default for CommentPrefs {
@@ -341,6 +343,7 @@ impl Default for CommentPrefs {
             pinned: false,
             group_tool: [CommentTool::Note, CommentTool::Highlight, CommentTool::Ink],
             hide_empty_highlight_hover: false,
+            smart_highlight: true,
         }
     }
 }

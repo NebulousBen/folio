@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 craft-docpath = { workspace = true }
 pdfcraft-measure = { workspace = true }
+pdfcraft-folio-reading = { path = "../folio-reading" }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "tiff"] }
 pdfcraft-render = { workspace = true }
 pdfcraft-cos = { workspace = true }

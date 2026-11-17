@@ -90,6 +90,10 @@ impl DocView {
     }
 
     pub fn go_to_page(&mut self, page: usize) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.folio_position = None;
+        }
         let page = page.min(self.page_count.saturating_sub(1));
         self.end_find_following();
         if page != self.current {
@@ -108,6 +112,12 @@ impl DocView {
         self.goto_point = None;
         self.goto = Some((page, 0.0));
         self.current = page;
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn go_to_reading_position(&mut self, page: usize, position: Option<[f32; 2]>) {
+        self.go_to_page(page);
+        self.folio_position = position;
     }
 
     /// The end of the document (End): the last page, scrolled to its bottom as far as the view

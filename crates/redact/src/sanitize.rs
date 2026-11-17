@@ -99,6 +99,40 @@ fn catalog(doc: &Document) -> Option<(ObjRef, Dict)> {
     Some((r, doc.get(r).as_dict()?.clone()))
 }
 
+pub(crate) const FOLIO_READING_KEY: &[u8] = b"FolioReadingData";
+
+/// Folio quotes and comments can mention a redacted passage from any page.
+pub(crate) fn drop_folio_reading(doc: &mut Document) -> Result<usize, RedactError> {
+    let Some((root, dict)) = catalog(doc) else { return Ok(0) };
+    let mut removed = usize::from(dict.contains(FOLIO_READING_KEY));
+    if removed > 0 {
+        doc.update_dict(root, |dict| {
+            dict.remove(FOLIO_READING_KEY);
+        })?;
+    }
+    let mut removed_refs = std::collections::HashSet::new();
+    for page in pdfcraft_model::pages(doc) {
+        let mut rows = annots_of(doc, &page.dict);
+        let count = rows.len();
+        rows.retain(|row| {
+            let obj = doc.resolve(row);
+            let folio = obj.as_dict().and_then(|dict| dict.get(b"NM")).is_some_and(|name| {
+                doc.resolve(name).as_string().is_some_and(|name| name.to_text().starts_with("folio:"))
+            });
+            if folio && let Some(reference) = row.as_ref() {
+                removed_refs.insert(reference);
+            }
+            !folio
+        });
+        if rows.len() < count {
+            removed += count - rows.len();
+            pdfcraft_annot::set_annots(doc, page.obj, rows)?;
+        }
+    }
+    crate::tags::drop_object_refs(doc, &removed_refs)?;
+    Ok(removed)
+}
+
 fn sub(doc: &Document, d: &Dict, key: &[u8]) -> Option<Dict> {
     d.get(key).and_then(|o| doc.resolve(o).as_dict().cloned())
 }
@@ -794,7 +828,8 @@ pub fn scan_only(doc: &Document, which: &[Hidden]) -> Vec<(Hidden, usize)> {
                         + count_sub(b"FileAttachment")
                         + owned(Hidden::Attachments)
                 }
-                Hidden::Comments => annots().iter().filter(|a| is_comment(a.name(b"Subtype").unwrap_or(b""))).count(),
+                Hidden::Comments => annots().iter().filter(|a| is_comment(a.name(b"Subtype").unwrap_or(b""))).count()
+                    + usize::from(cat.contains(FOLIO_READING_KEY)),
                 Hidden::FormFields => {
                     let n = pdfcraft_forms::fields(doc).len();
                     if n > 0 {
@@ -819,7 +854,7 @@ pub fn scan_only(doc: &Document, which: &[Hidden]) -> Vec<(Hidden, usize)> {
                         + sub(doc, names(), b"JavaScript").map_or(0, |t| name_tree_len(doc, &t))
                         + outline_action_count(doc, &cat)
                 }
-                Hidden::PrivateData => owned(Hidden::PrivateData),
+                Hidden::PrivateData => owned(Hidden::PrivateData) + usize::from(cat.contains(FOLIO_READING_KEY)),
             };
             (h, n)
         })
@@ -990,6 +1025,9 @@ pub(crate) fn remove_counted(
     let mut names = sub(doc, &cat, b"Names");
     for &h in which {
         match h {
+            Hidden::Comments | Hidden::PrivateData => {
+                cat.remove(FOLIO_READING_KEY);
+            }
             Hidden::Metadata => {
                 doc.trailer_mut().remove(b"Info");
             }

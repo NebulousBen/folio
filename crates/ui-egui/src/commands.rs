@@ -496,7 +496,8 @@ impl PdfCraftApp {
                     && let Some(doc) = self.session.get(self.views[i].id)
                 {
                     let info = &doc.info;
-                    if let Some((page, quads)) = self.views[i].selection_quads(info) {
+                    let smart = self.comment_prefs.smart_highlight && tool == crate::comments::CommentTool::Highlight;
+                    if let Some((page, quads)) = self.views[i].markup_quads(info, smart) {
                         self.views[i].clear_selection();
                         let style = self.comment_prefs.style(tool);
                         let author = self.comment_prefs.author.clone();

@@ -443,8 +443,9 @@ pub(crate) fn page_after_text(resp: &egui::Response, cx: &PageCx<'_>, view: &mut
     if tool.markup().is_none() || !cx.allowed || !finished {
         return;
     }
+    let smart = tool == CommentTool::Highlight && cx.prefs.smart_highlight;
     if let Some(kind) = tool.markup()
-        && let Some((page, quads)) = view.selection_quads(cx.info).filter(|(p, _)| *p == cx.page)
+        && let Some((page, quads)) = view.markup_quads(cx.info, smart).filter(|(p, _)| *p == cx.page)
     {
         view.clear_selection();
         view.pending_edit = Some(new_comment(cx, tool, Shape::TextMarkup { kind, quads }, String::new()));
