@@ -11,6 +11,7 @@ use crate::OpenOutcome;
 pub(super) struct LegacyTabsUi {
     loading: Option<Job<LegacySession>>,
     preview: Option<LegacySession>,
+    restoring: Option<Job<LegacySession>>,
     opening: Option<Opening>,
 }
 
@@ -24,7 +25,7 @@ struct Opening {
 impl PdfCraftApp {
     pub(crate) fn folio_preview_tabs(&mut self, ctx: &egui::Context) {
         let Some(profile) = self.folio.directory.as_deref().and_then(Path::parent).map(Path::to_owned) else { return };
-        if self.folio.tabs.loading.is_some() || self.folio.tabs.opening.is_some() {
+        if self.folio.tabs.loading.is_some() || self.folio.tabs.restoring.is_some() || self.folio.tabs.opening.is_some() {
             return;
         }
         match run("folio-tabs-preview", ctx, move || session::read(&profile)) {
@@ -62,9 +63,28 @@ pub(super) fn show(app: &mut PdfCraftApp, ctx: &egui::Context) {
             apply = ui.add_enabled(usable > 0 || !session.closed.is_empty(), egui::Button::new("Restore saved tabs")).clicked();
         });
         if apply {
-            start(app, session);
+            if let Some(directory) = app.folio.directory.clone() {
+                match run("folio-tab-previews", ctx, move || {
+                    let mut session = session;
+                    for tab in &mut session.tabs {
+                        if let Ok(Some(path)) = session::cached_word_preview(&directory, tab) {
+                            tab.path = path;
+                        }
+                    }
+                    Ok(session)
+                }) {
+                    Ok(job) => app.folio.tabs.restoring = Some(job),
+                    Err(error) => app.notify_error(error),
+                }
+            }
         } else if open {
             app.folio.tabs.preview = Some(session);
+        }
+    }
+    if let Some(result) = finished(&mut app.folio.tabs.restoring) {
+        match result {
+            Ok(session) => start(app, session),
+            Err(error) => app.notify_error(error),
         }
     }
     if let Some(mut opening) = app.folio.tabs.opening.take() {
@@ -88,7 +108,9 @@ fn start(app: &mut PdfCraftApp, session: LegacySession) {
         app.closed_tabs.drain(..old);
     }
     app.reopen_last_session = session.restore_on_startup;
-    let queue = session.tabs.iter().map(|tab| text_path(&tab.path)).collect();
+    // Finish reopening PDFs before any uncached Office files enter the conversion worker.
+    let (mut queue, office): (VecDeque<_>, VecDeque<_>) = session.tabs.iter().map(|tab| text_path(&tab.path)).partition(|path| is_pdf(path));
+    queue.extend(office);
     app.folio.tabs.opening = Some(Opening { queue, waiting: None, active, unavailable: 0 });
 }
 
@@ -96,6 +118,9 @@ fn open_next(app: &mut PdfCraftApp, opening: &mut Opening) -> bool {
     if let Some(waiting) = opening.waiting.as_deref() {
         if app.folio_tab_pending(waiting) {
             return true;
+        }
+        if is_pdf(waiting) && app.tab_showing(waiting).is_none() {
+            opening.unavailable += 1;
         }
         opening.waiting = None;
     }
@@ -126,4 +151,8 @@ fn open_next(app: &mut PdfCraftApp, opening: &mut Opening) -> bool {
 
 fn text_path(path: &Path) -> String {
     path.to_string_lossy().into_owned()
+}
+
+fn is_pdf(path: &str) -> bool {
+    Path::new(path).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
 }
